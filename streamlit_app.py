@@ -11,6 +11,12 @@ def timecode_to_frames(tc_str, framerate):
     except:
         return None
 
+def frames_to_timecode(frames, framerate):
+    total_seconds, f = divmod(frames, framerate)
+    h, remainder = divmod(total_seconds, 3600)
+    m, s = divmod(remainder, 60)
+    return f"{int(h):02}:{int(m):02}:{int(s):02}:{int(f):02}"
+
 @st.cache_data
 
 def parse_edl(edl_text, framerate):
@@ -76,13 +82,17 @@ def parse_edl(edl_text, framerate):
         if best_match:
             tc_in = best_match["TC IN"]
             tc_out = best_match["TC OUT"]
-            duration = timecode_to_frames(tc_out, framerate) - timecode_to_frames(tc_in, framerate) - 1
+            duration = timecode_to_frames(tc_out, framerate) - timecode_to_frames(tc_in, framerate)
+            src_in = best_match["Source TC IN"]
+            src_out_frames = timecode_to_frames(best_match["Source TC OUT"], framerate) - 1
+            src_out = frames_to_timecode(src_out_frames, framerate)
+
             combined.append({
                 "VFX CODE": marker["VFX CODE"],
                 "EPISODE": marker["VFX CODE"].split("_")[1],
                 "TC IN/OUT": f"{tc_in} - {tc_out}",
-                "Source TC IN": best_match["Source TC IN"],
-                "Source TC OUT": best_match["Source TC OUT"],
+                "Source TC IN": src_in,
+                "Source TC OUT": src_out,
                 "Duration (frames)": duration,
                 "Description": marker["Description"]
             })
