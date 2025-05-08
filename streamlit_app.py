@@ -38,13 +38,14 @@ def parse_edl(edl_text, framerate):
         elif in_marker_block and line.startswith("*"):
             marker_lines.append(line)
 
-    # --- Extract marker info ---
+    # --- Extract marker info using regex ---
     markers = []
     for line in marker_lines:
         if "HH_" not in line:
             continue
         try:
-            marker_tc = line[60:76].strip()
+            tc_match = re.search(r"(\d{2}:\d{2}:\d{2}:\d{2})", line)
+            marker_tc = tc_match.group(1) if tc_match else "00:00:00:00"
             comment_start = line.find("HH_")
             comment = line[comment_start:].strip()
             vfx_code = comment.split(" ")[0]
@@ -60,7 +61,7 @@ def parse_edl(edl_text, framerate):
     # --- Match markers to events ---
     combined = []
     for marker in markers:
-        marker_tc_frames = timecode_to_frames(marker["Marker TC"] + ":00", framerate)
+        marker_tc_frames = timecode_to_frames(marker["Marker TC"], framerate)
         best_match = None
         smallest_diff = float("inf")
 
@@ -105,9 +106,6 @@ if edl_file:
         prev_df = pd.read_csv(csv_file)
         merged = current_df.merge(prev_df, on="VFX CODE", suffixes=("", "_old"))
 
-        def highlight_diff(val, old_val):
-            return "color: red" if val != old_val else ""
-
         highlight_df = current_df.copy()
         for col in ["TC IN/OUT", "Source TC IN", "Source TC OUT", "Duration (frames)"]:
             old_col = col + "_old"
@@ -116,6 +114,7 @@ if edl_file:
                     f"**{v}**" if str(v) != str(o) else v
                     for v, o in zip(merged[col], merged[old_col])
                 ]
+
         st.subheader("Comparison with Previous CSV")
         st.dataframe(highlight_df)
     else:
