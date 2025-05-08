@@ -103,8 +103,25 @@ def parse_edl(edl_text, framerate):
 st.title("📽️ VFX EDL Comparison Tool")
 
 with st.expander("ℹ️ How to Use This App (Click to Expand)"):
+    st.image("/mnt/data/Screenshot 2025-05-08 at 7.15.35 PM.png", caption="Recommended AVID EDL Export Settings", use_column_width=True)
+
     st.markdown("""
     ### 🎬 Step-by-Step Instructions
+
+#### 🎛️ Recommended AVID Settings
+Make sure your EDL export from AVID is set up like this:
+
+- **Output Format**: `File_129`
+- **Optimize EDL**: ✅ Checked
+- **Handles**: `0` frames (no extra)
+
+Under **Include in List → Both Picture and Sound**:
+- ✅ Clip Names
+- ✅ Source File Name
+- ✅ All Markers at End
+- ✅ Frame Count
+- ❌ Leave everything else unchecked
+
 
     **What You Need:**
     - `.edl` file exported from **AVID Media Composer** in **File_129 format**
