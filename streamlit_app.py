@@ -102,6 +102,32 @@ def parse_edl(edl_text, framerate):
 # --- UI ---
 st.title("📽️ VFX EDL Comparison Tool")
 
+with st.expander("ℹ️ How to Use This App (Click to Expand)"):
+    st.markdown("""
+    ### 🎬 Step-by-Step Instructions
+
+    **What You Need:**
+    - `.edl` file exported from **AVID Media Composer** in **File_129 format**
+    - Optional: a `.csv` from a previous run of this app for comparison
+
+    **Required EDL Format:**
+    - Must include **Marker Metadata** with VFX Codes in the comment like:
+      `HH_103_039_020 - Remove shadow`
+
+    **Steps:**
+    1. **Upload your current EDL** (Step 1)
+    2. (Optional) **Upload your previous CSV** to compare (Step 2)
+    3. Select your **frame rate** (defaults to 24 fps)
+    4. Choose whether to **include the description** in export
+    5. View the parsed table (bold red = changed)
+    6. **Download your final CSV**
+
+    **Important Notes:**
+    - `Source TC OUT` is adjusted to subtract 1 frame
+    - Duration is calculated in frames (based on the selected frame rate)
+    - `VFX CODE` is used to match records between current and previous versions
+    """)
+
 edl_file = st.file_uploader("Step 1: Upload current EDL (.edl)", type=["edl"])
 csv_file = st.file_uploader("Step 2 (Optional): Upload previous CSV to compare", type=["csv"])
 
