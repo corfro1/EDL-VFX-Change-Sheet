@@ -100,27 +100,27 @@ include_desc = st.checkbox("Include Description in export", value=True)
 if edl_file:
     edl_text = edl_file.read().decode("utf-8")
     current_df = parse_edl(edl_text, framerate=frame_rate)
-    
+
     if csv_file:
         prev_df = pd.read_csv(csv_file)
         merged = current_df.merge(prev_df, on="VFX CODE", suffixes=("", "_old"))
 
-        def highlight_diff(val, old_val):
-            return "color: red" if val != old_val else ""
+        # Comparison with highlighting
+        compare_cols = ["TC IN/OUT", "Source TC IN", "Source TC OUT", "Duration (frames)"]
 
-        highlight_df = current_df.copy()
-        for col in ["TC IN/OUT", "Source TC IN", "Source TC OUT", "Duration (frames)"]:
-            old_col = col + "_old"
-            if old_col in merged:
-                highlight_df[col] = [
-                    f"**{v}**" if str(v) != str(o) else v
-                    for v, o in zip(merged[col], merged[old_col])
-                ]
+        def highlight_changes(val, base_col):
+            old_val = merged[f"{base_col}_old"]
+            return ["color: red" if str(v) != str(o) else "" for v, o in zip(merged[base_col], old_val)]
+
+        styled_df = current_df.style
+        for col in compare_cols:
+            styled_df = styled_df.apply(highlight_changes, base_col=col, subset=[col])
+
         st.subheader("Comparison with Previous CSV")
-        st.dataframe(highlight_df)
+        st.dataframe(styled_df, use_container_width=True)
     else:
         st.subheader("Parsed Current EDL Data")
-        st.dataframe(current_df)
+        st.dataframe(current_df, use_container_width=True)
 
     # --- CSV Export ---
     export_df = current_df.copy()
