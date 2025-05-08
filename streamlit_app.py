@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 from io import StringIO
+import os
 
 # --- Helpers ---
 def timecode_to_frames(tc_str, framerate):
@@ -62,3 +63,114 @@ def parse_edl(edl_text, framerate):
                 "Description": description
             })
         except:
+            continue
+
+    # --- Match markers to events ---
+    combined = []
+    for marker in markers:
+        marker_tc_frames = timecode_to_frames(marker["Marker TC"], framerate)
+        best_match = None
+        smallest_diff = float("inf")
+
+        for event in events:
+            event_tc_in_frames = timecode_to_frames(event["TC IN"], framerate)
+            if event_tc_in_frames is not None:
+                diff = abs(marker_tc_frames - event_tc_in_frames)
+                if diff < smallest_diff:
+                    smallest_diff = diff
+                    best_match = event
+
+        if best_match:
+            tc_in = best_match["TC IN"]
+            tc_out = best_match["TC OUT"]
+            duration = timecode_to_frames(tc_out, framerate) - timecode_to_frames(tc_in, framerate)
+            src_in = best_match["Source TC IN"]
+            src_out_frames = timecode_to_frames(best_match["Source TC OUT"], framerate) - 1
+            src_out = frames_to_timecode(src_out_frames, framerate)
+
+            combined.append({
+                "VFX CODE": marker["VFX CODE"],
+                "EPISODE": marker["VFX CODE"].split("_")[1],
+                "TC IN/OUT": f"{tc_in} - {tc_out}",
+                "Source TC IN": src_in,
+                "Source TC OUT": src_out,
+                "Duration (frames)": duration,
+                "Description": marker["Description"]
+            })
+
+    return pd.DataFrame(combined)
+
+# --- UI ---
+st.title("📽️ VFX EDL Comparison Tool")
+
+with st.expander("ℹ️ How to Use This App (Click to Expand)"):
+    st.markdown("""
+    ### 🎬 Step-by-Step Instructions
+
+    #### 🎛️ Recommended AVID Settings
+    Make sure your EDL export from AVID is configured like this:
+
+    - **Output Format**: `File_129`
+    - **Optimize EDL**: ✅ Checked
+    - **Handles**: `0` frames (no extra beyond in/out)
+
+    Under **Include in List → Both Picture and Sound**, enable only:
+    - ✅ Clip Names
+    - ✅ Source File Name
+    - ✅ All Markers at End
+    - ✅ Frame Count
+
+    Leave all other checkboxes **unchecked**:
+    - ❌ Markers
+    - ❌ Reel Names
+    - ❌ Cadence
+    - ❌ Clip Comments
+    - ❌ Repair Notes
+    - ❌ Spanned Markers
+
+    **Steps:**
+    1. Upload your current EDL (Step 1)
+    2. (Optional) Upload your previous CSV to compare (Step 2)
+    3. Select your frame rate
+    4. (Optional) Toggle whether to include VFX Descriptions in export
+    5. Download the updated CSV
+
+    Bold red text indicates differences from the previous cut.
+    """)
+
+edl_file = st.file_uploader("Step 1: Upload current EDL (.edl)", type=["edl"])
+csv_file = st.file_uploader("Step 2 (Optional): Upload previous CSV to compare", type=["csv"])
+
+frame_rate = st.selectbox("Select frame rate", [23.976, 24, 25, 29.97], index=1)
+include_desc = st.checkbox("Include Description in export", value=True)
+
+if edl_file:
+    edl_text = edl_file.read().decode("utf-8")
+    current_df = parse_edl(edl_text, framerate=frame_rate)
+
+    if csv_file:
+        prev_df = pd.read_csv(csv_file)
+        merged = current_df.merge(prev_df, on="VFX CODE", suffixes=("", "_old"))
+
+        highlight_df = current_df.copy()
+        for col in ["TC IN/OUT", "Source TC IN", "Source TC OUT", "Duration (frames)"]:
+            old_col = col + "_old"
+            if old_col in merged:
+                highlight_df[col] = [
+                    f"**{v}**" if str(v) != str(o) else v
+                    for v, o in zip(merged[col], merged[old_col])
+                ]
+
+        st.subheader("Comparison with Previous CSV")
+        st.dataframe(highlight_df)
+    else:
+        st.subheader("Parsed Current EDL Data")
+        st.dataframe(current_df)
+
+    # --- CSV Export ---
+    export_df = current_df.copy()
+    if not include_desc:
+        export_df = export_df.drop(columns=["Description"])
+    csv_buffer = StringIO()
+    export_df.to_csv(csv_buffer, index=False)
+    st.download_button("📥 Download CSV", csv_buffer.getvalue(), file_name="parsed_vfx.csv", mime="text/csv")
