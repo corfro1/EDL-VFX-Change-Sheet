@@ -1,0 +1,131 @@
+import streamlit as st
+import pandas as pd
+import re
+from io import StringIO
+
+# --- Helpers ---
+def timecode_to_frames(tc_str, framerate):
+    try:
+        h, m, s, f = map(int, tc_str.split(":"))
+        return int(round(((h * 3600 + m * 60 + s) * framerate) + f))
+    except:
+        return None
+
+@st.cache_data
+
+def parse_edl(edl_text, framerate):
+    lines = edl_text.splitlines()
+    marker_lines = []
+    events = []
+    in_marker_block = False
+
+    # --- Extract event lines ---
+    for line in lines:
+        match = re.match(
+            r"^\d+\s+([\w\d_]+)\s+V\s+C\s+(\d{2}:\d{2}:\d{2}:\d{2})\s+(\d{2}:\d{2}:\d{2}:\d{2})\s+(\d{2}:\d{2}:\d{2}:\d{2})\s+(\d{2}:\d{2}:\d{2}:\d{2})",
+            line,
+        )
+        if match:
+            events.append({
+                "Clip Name": match.group(1),
+                "Source TC IN": match.group(2),
+                "Source TC OUT": match.group(3),
+                "TC IN": match.group(4),
+                "TC OUT": match.group(5)
+            })
+        if "* Marker Metadata" in line:
+            in_marker_block = True
+        elif in_marker_block and line.startswith("*"):
+            marker_lines.append(line)
+
+    # --- Extract marker info ---
+    markers = []
+    for line in marker_lines:
+        if "HH_" not in line:
+            continue
+        try:
+            marker_tc = line[60:76].strip()
+            comment_start = line.find("HH_")
+            comment = line[comment_start:].strip()
+            vfx_code = comment.split(" ")[0]
+            description = comment[len(vfx_code):].strip(" -")
+            markers.append({
+                "VFX CODE": vfx_code,
+                "Marker TC": marker_tc,
+                "Description": description
+            })
+        except:
+            continue
+
+    # --- Match markers to events ---
+    combined = []
+    for marker in markers:
+        marker_tc_frames = timecode_to_frames(marker["Marker TC"] + ":00", framerate)
+        best_match = None
+        smallest_diff = float("inf")
+
+        for event in events:
+            event_tc_in_frames = timecode_to_frames(event["TC IN"], framerate)
+            if event_tc_in_frames is not None:
+                diff = abs(marker_tc_frames - event_tc_in_frames)
+                if diff < smallest_diff:
+                    smallest_diff = diff
+                    best_match = event
+
+        if best_match:
+            tc_in = best_match["TC IN"]
+            tc_out = best_match["TC OUT"]
+            duration = timecode_to_frames(tc_out, framerate) - timecode_to_frames(tc_in, framerate)
+            combined.append({
+                "VFX CODE": marker["VFX CODE"],
+                "EPISODE": marker["VFX CODE"].split("_")[1],
+                "TC IN/OUT": f"{tc_in} - {tc_out}",
+                "Source TC IN": best_match["Source TC IN"],
+                "Source TC OUT": best_match["Source TC OUT"],
+                "Duration (frames)": duration,
+                "Description": marker["Description"]
+            })
+
+    return pd.DataFrame(combined)
+
+# --- UI ---
+st.title("📽️ VFX EDL Comparison Tool")
+
+edl_file = st.file_uploader("Step 1: Upload current EDL (.edl)", type=["edl"])
+csv_file = st.file_uploader("Step 2 (Optional): Upload previous CSV to compare", type=["csv"])
+
+frame_rate = st.selectbox("Select frame rate", [23.976, 24, 25, 29.97], index=1)
+include_desc = st.checkbox("Include Description in export", value=True)
+
+if edl_file:
+    edl_text = edl_file.read().decode("utf-8")
+    current_df = parse_edl(edl_text, framerate=frame_rate)
+    
+    if csv_file:
+        prev_df = pd.read_csv(csv_file)
+        merged = current_df.merge(prev_df, on="VFX CODE", suffixes=("", "_old"))
+
+        def highlight_diff(val, old_val):
+            return "color: red" if val != old_val else ""
+
+        highlight_df = current_df.copy()
+        for col in ["TC IN/OUT", "Source TC IN", "Source TC OUT", "Duration (frames)"]:
+            old_col = col + "_old"
+            if old_col in merged:
+                highlight_df[col] = [
+                    f"**{v}**" if str(v) != str(o) else v
+                    for v, o in zip(merged[col], merged[old_col])
+                ]
+        st.subheader("Comparison with Previous CSV")
+        st.dataframe(highlight_df)
+    else:
+        st.subheader("Parsed Current EDL Data")
+        st.dataframe(current_df)
+
+    # --- CSV Export ---
+    export_df = current_df.copy()
+    if not include_desc:
+        export_df = export_df.drop(columns=["Description"])
+    csv_buffer = StringIO()
+    export_df.to_csv(csv_buffer, index=False)
+    st.download_button("📥 Download CSV", csv_buffer.getvalue(), file_name="parsed_vfx.csv", mime="text/csv")
