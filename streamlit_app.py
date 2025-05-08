@@ -76,7 +76,7 @@ def parse_edl(edl_text, framerate):
         if best_match:
             tc_in = best_match["TC IN"]
             tc_out = best_match["TC OUT"]
-            duration = timecode_to_frames(tc_out, framerate) - timecode_to_frames(tc_in, framerate)
+            duration = timecode_to_frames(tc_out, framerate) - timecode_to_frames(tc_in, framerate) - 1
             combined.append({
                 "VFX CODE": marker["VFX CODE"],
                 "EPISODE": marker["VFX CODE"].split("_")[1],
