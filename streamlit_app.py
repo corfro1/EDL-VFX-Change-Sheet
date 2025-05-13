@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 from io import StringIO
+import os
 
 # --- Helpers ---
 def timecode_to_frames(tc_str, framerate):
@@ -10,6 +11,12 @@ def timecode_to_frames(tc_str, framerate):
         return int(round(((h * 3600 + m * 60 + s) * framerate) + f))
     except:
         return None
+
+def frames_to_timecode(frames, framerate):
+    total_seconds, f = divmod(frames, framerate)
+    h, remainder = divmod(total_seconds, 3600)
+    m, s = divmod(remainder, 60)
+    return f"{int(h):02}:{int(m):02}:{int(s):02}:{int(f):02}"
 
 @st.cache_data
 
@@ -77,12 +84,16 @@ def parse_edl(edl_text, framerate):
             tc_in = best_match["TC IN"]
             tc_out = best_match["TC OUT"]
             duration = timecode_to_frames(tc_out, framerate) - timecode_to_frames(tc_in, framerate)
+            src_in = best_match["Source TC IN"]
+            src_out_frames = timecode_to_frames(best_match["Source TC OUT"], framerate) - 1
+            src_out = frames_to_timecode(src_out_frames, framerate)
+
             combined.append({
                 "VFX CODE": marker["VFX CODE"],
                 "EPISODE": marker["VFX CODE"].split("_")[1],
                 "TC IN/OUT": f"{tc_in} - {tc_out}",
-                "Source TC IN": best_match["Source TC IN"],
-                "Source TC OUT": best_match["Source TC OUT"],
+                "Source TC IN": src_in,
+                "Source TC OUT": src_out,
                 "Duration (frames)": duration,
                 "Description": marker["Description"]
             })
@@ -91,6 +102,41 @@ def parse_edl(edl_text, framerate):
 
 # --- UI ---
 st.title("📽️ VFX EDL Comparison Tool")
+
+with st.expander("ℹ️ How to Use This App (Click to Expand)"):
+    st.markdown("""
+    ### 🎬 Step-by-Step Instructions
+
+    #### 🎛️ Recommended AVID Settings
+    Make sure your EDL export from AVID is configured like this:
+
+    - **Output Format**: `File_129`
+    - **Optimize EDL**: ✅ Checked
+    - **Handles**: `0` frames (no extra beyond in/out)
+
+    Under **Include in List → Both Picture and Sound**, enable only:
+    - ✅ Clip Names
+    - ✅ Source File Name
+    - ✅ All Markers at End
+    - ✅ Frame Count
+
+    Leave all other checkboxes **unchecked**:
+    - ❌ Markers
+    - ❌ Reel Names
+    - ❌ Cadence
+    - ❌ Clip Comments
+    - ❌ Repair Notes
+    - ❌ Spanned Markers
+
+    **Steps:**
+    1. Upload your current EDL (Step 1)
+    2. (Optional) Upload your previous CSV to compare (Step 2)
+    3. Select your frame rate
+    4. (Optional) Toggle whether to include VFX Descriptions in export
+    5. Download the updated CSV
+
+    Bold red text indicates differences from the previous cut.
+    """)
 
 edl_file = st.file_uploader("Step 1: Upload current EDL (.edl)", type=["edl"])
 csv_file = st.file_uploader("Step 2 (Optional): Upload previous CSV to compare", type=["csv"])
@@ -101,7 +147,7 @@ include_desc = st.checkbox("Include Description in export", value=True)
 if edl_file:
     edl_text = edl_file.read().decode("utf-8")
     current_df = parse_edl(edl_text, framerate=frame_rate)
-    
+
     if csv_file:
         prev_df = pd.read_csv(csv_file)
         merged = current_df.merge(prev_df, on="VFX CODE", suffixes=("", "_old"))
